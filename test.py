@@ -6,7 +6,7 @@
 # import sys
 #
 # sys.stdout.clear()
-# import time
-# while True:
-#     print(time.time())
-#     time.sleep(0.001)
+import time
+while True:
+    print(time.time())
+    time.sleep(0.001)

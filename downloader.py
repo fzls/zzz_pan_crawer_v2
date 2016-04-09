@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 import re
 import string
@@ -594,7 +594,7 @@ NEED_DOWNLOAD = True
 # init_url_into_db(initial_urls)
 #
 # delay for a piece of time at the start
-DELAY = 0 * MINUTE + 5 * SECOND
+DELAY = 0 * MINUTE + 30 * SECOND
 logging.log(MyINFO, "delay for %s at the start" % get_readable_time(DELAY))
 my_timer(DELAY)
 # doing work
