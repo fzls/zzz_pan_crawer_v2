@@ -14,9 +14,7 @@ import requests
 logging.addLevelName(level=25, levelName='MyINFO')
 MyINFO = 25
 
-logging.basicConfig(level=MyINFO,
-                    format='%(asctime)s [line:%(lineno)d] %(levelname)s: %(message)s',
-                    datefmt='%H:%M:%S')
+
 
 CODE_LENGTH = 7
 BASE_URL = "http://zzzpan.com/"
@@ -101,7 +99,7 @@ def get_readable_time(_t):
     min_ = int(t % HOUR / MINUTE)
     sec = int(t % MINUTE / SECOND)
     sec += _t - t
-    sec = int(sec*1000)/1000.0
+    sec = int(sec * 1000) / 1000.0
     result = ''
     if day > 0:
         result = str(day) + " d " + str(hour) + " h " + str(min_) + " m " + str(sec) + " s"
@@ -145,7 +143,7 @@ def fetch_file_info(url, q):
     try:
         html = requests.post(url, headers=headers)
     except requests.RequestException as e:
-        logging.exception('except: %s' % e)
+        logging.exception('except: [ %s ]' % e)
         sleep_after_banned("fetch file info")
         # fetch_file_info(url, q)
         return
@@ -154,7 +152,7 @@ def fetch_file_info(url, q):
     if html.status_code != 200:
         global FAIL
         FAIL += 1
-        logging.warning("%s is invalid, error code: %d" % (url, html.status_code))
+        logging.warning("[ %s ] is invalid, error code: [ %d ]" % (url, html.status_code))
         return
 
     # set encoding
@@ -204,17 +202,20 @@ def fetch_file_info(url, q):
 
     # sleep for a while to prevent from being banned
     sleep_after_visit(file_name)
-    reconnect_and_sleep_after_fetched_max_files()
-
-
-def reconnect_and_sleep_after_fetched_max_files():
     global url_cnt
     url_cnt += 1
-    if url_cnt % MAX_PER_IP == 0:
-        logging.log(MyINFO, "fetched %d files, reconnect network and sleep to prevent from being banned" % url_cnt)
+    reconnect_and_sleep_after_visited_server_max_times()
+
+
+def reconnect_and_sleep_after_visited_server_max_times():
+    global url_cnt, cnt
+    if (url_cnt + cnt) % MAX_PER_IP == 0:
+        logging.log(MyINFO,
+                    "fetched [ %d ] files, downloaded [ %d ] reconnect network and sleep to prevent from being banned" % (
+                        url_cnt, cnt))
         reconnect_net()
         t = SLEEP_AFTER_DOWNLOAD_MAX_FILE + randint(0, 10 * 1000) / 1000  # 0.0s ~ 10.0s
-        logging.log(MyINFO, 'sleep for %s' % get_readable_time(t))
+        logging.log(MyINFO, 'sleep for [ %s ]' % get_readable_time(t))
         my_timer(t)
 
 
@@ -222,17 +223,22 @@ def sleep_after_visit(file_name):
     from random import randint
     global SLEEP_L, SLEEP_H, MAX_PER_IP
     sleep_time = randint(SLEEP_L * 1000, SLEEP_H * 1000) / 1000
-    logging.log(MyINFO, "sleep for %s when fetching file info [ %s ]" % (get_readable_time(sleep_time), file_name))
+    logging.log(MyINFO, "sleep for [ %s ] when fetching file info [ %s ]" % (get_readable_time(sleep_time), file_name))
     my_timer(sleep_time)
 
 
 def sleep_after_banned(message):
-    global BANNED, SLEEP_AFTER_BANNED
+    global BANNED, SLEEP_AFTER_BANNED, url_cnt
     BANNED += 1
     reconnect_net()
     _SLEEP_AFTER_BANNED = SLEEP_AFTER_BANNED + randint(0, 60 * 1000) / 1000  # 0.0s ~ 60.0s
     logging.log(MyINFO,
-                '%d th benned when %s, sleep for %s' % (BANNED, message, get_readable_time(_SLEEP_AFTER_BANNED)))
+                '[ %d ] th benned when [ %s ], sleep for [ %s ]' % (
+                    BANNED, message, get_readable_time(_SLEEP_AFTER_BANNED)))
+    logging.log(MyINFO, "---------------------------------------------------------------")
+    so_far_downloaded = len([name for name in os.listdir('.') if os.path.isfile(name)])
+    logging.log(MyINFO, "Files downloaded so far: [ %d ]", so_far_downloaded)
+    logging.log(MyINFO, "This time fetched [ %d ] new file info, downloaded [ %d ] new file" % (url_cnt, cnt))
     my_timer(_SLEEP_AFTER_BANNED)
 
 
@@ -285,18 +291,18 @@ def download_file(urlInfo, q):
     download_link = urlInfo[DOWNLOAD_LINK]
     file_name = urlInfo[FILE_NAME]
     logging.log(MyINFO, "\n------------------------------------------------------------------")
-    logging.log(MyINFO, "downloaded times : %d" % urlInfo[DOWNLOAD_TIMES])
+    logging.log(MyINFO, "downloaded times : [ %d ]" % urlInfo[DOWNLOAD_TIMES])
     if NEED_DOWNLOAD:
         # if file not exist, download it
         if not os.path.exists(os.getcwd() + '\\' + file_name):
             # print banner
             cnt += 1
             logging.log(MyINFO, "\n----------------------------the %d th----------------------------" % cnt)
-            logging.log(MyINFO, "current url: %s" % urlInfo[URL])
+            logging.log(MyINFO, "current url: [ %s ]" % urlInfo[URL])
 
             start = time.clock()
-            logging.log(MyINFO, "%s is downloading" % file_name)
-            logging.log(MyINFO, "file link is %s" % download_link)
+            logging.log(MyINFO, "[ %s ] is downloading" % file_name)
+            logging.log(MyINFO, "file link is [ %s ]" % download_link)
 
             # download file
             try:
@@ -304,41 +310,42 @@ def download_file(urlInfo, q):
                 # find size
                 start_time = time.time()
                 file_size = urlInfo[FILE_SIZE]
-                logging.log(MyINFO, "file size is %s" % file_size)
+                logging.log(MyINFO, "file size is [ %s ]" % file_size)
 
                 # write into local
-                logging.log(MyINFO, "%s is saving to local" % file_name)
+                logging.log(MyINFO, "[ %s ] is saving to local" % file_name)
                 with open(file_name, "wb") as file:
                     count = 1
-                    block_size = 512
+                    global block_size
                     total_size = get_size_in_Byte(file_size)
                     for chunk in downloaded_file.iter_content(chunk_size=block_size):
                         if chunk:  # filter out keep-alive new chunks
                             duration = time.time() - start_time
-                            progress_size = int(count * block_size)
+                            progress_size = int(min(count * block_size, total_size))
                             if (duration == 0):
                                 duration = 0.1
                             speed = int(progress_size / (KB * duration))
-                            percent = int(count * block_size * 100 / total_size)
+                            percent = int(progress_size * 100 / total_size)
                             remain_time = (total_size - progress_size) * duration / progress_size
                             sys.stdout.write(
-                                "\r.......%d%%, %d KB, %d KB/s, [ %s passed | about %s remain ]" %
+                                "\r.......%d%%, %d KB, %d KB/s, [ %s passed | about %s remain ]  block size : %d KB" %
                                 (percent, progress_size / KB, speed, get_readable_time(duration),
-                                 get_readable_time(remain_time)))
+                                 get_readable_time(remain_time), block_size / KB))
                             file.write(chunk)
                             file.flush()
                             os.fsync(file.fileno())
                             count += 1
                     sys.stdout.write("\n")
                 end = time.clock()
-                logging.log(MyINFO, "file download and saved using %s" % get_readable_time(end - start))
+                logging.log(MyINFO, "file download and saved using [ %s ]" % get_readable_time(end - start))
+                reconnect_and_sleep_after_visited_server_max_times()
             except requests.RequestException as e:
-                logging.exception('except: %s' % e)
+                logging.exception('except: [ %s ]' % e)
                 sleep_after_banned("downloading " + file_name)
                 # download_file(urlInfo, q)
                 return
         else:
-            logging.log(MyINFO, "%s already downloaded" % file_name)
+            logging.log(MyINFO, "Already downloaded [ %s ]" % file_name)
 
     # add new unvisited urls into q
     urls = urlInfo[URLS]
@@ -346,7 +353,7 @@ def download_file(urlInfo, q):
         if url not in VISITED:
             fetch_file_info(url, q)
 
-    logging.log(MyINFO, "remaining urls : %d  |||-----|||  newly fetched urls : %d" % (q.qsize(), url_cnt))
+    logging.log(MyINFO, "Remaining urls : [ %d ] |||-----|||  newly fetched urls : [ %d ]" % (q.qsize(), url_cnt))
 
 
 # def generate_next_random_url():
@@ -368,9 +375,9 @@ def download_file(urlInfo, q):
 
 
 def reconnect_net():
+    global vpn_account, vpn_password
     os.system("rasdial /disconnect")
-    os.system("rasdial MyVPN 3130101213 y19950425")
-    # os.system("rasdial MyVPN 3130104501 300014")
+    os.system("rasdial MyVPN %s %s" % (vpn_account, vpn_password))
     # print new ip
     import subprocess, locale
     p = subprocess.Popen("ipconfig", stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True).communicate()[0]
@@ -378,7 +385,7 @@ def reconnect_net():
     ip = re.search(
         r'IPv4 Address. . . . . . . . . . . : (.+)\r\n   Subnet Mask . . . . . . . . . . . : 255.255.255.255\r\n',
         s).group(1)
-    logging.log(MyINFO, "current ip is %s" % ip)
+    logging.log(MyINFO, "Current ip is [ %s ] , account is [ %s ]" % (ip, vpn_account))
 
 
 # def getTopDownloadedFiles(initial_urls, max_time):
@@ -403,7 +410,7 @@ def reconnect_net():
 #         for url in urls:
 #             if BASE_URL + url not in VISITED:
 #                 fetch_file_info(BASE_URL + url, q)
-#         logging.log(MyINFO, "remaining urls : %d" % q.qsize())
+#         logging.log(MyINFO, "Remaining urls : [ %d ]" % q.qsize())
 #         if cnt >= max_time:
 #             return
 #     total = records._qsize()
@@ -423,7 +430,7 @@ def fetch_initial_file_info_from_db(q):
         with connection.cursor() as cursor:
             cursor.execute("select download_times,url,file_name,file_size,download_link,url_1,url_2,url_3 from anime")
             result = cursor.fetchall()
-            logging.log(MyINFO, "fetch %d urlInfo from database" % cursor.rowcount)
+            logging.log(MyINFO, "fetch [ %d ] urlInfo from database" % cursor.rowcount)
             for r in result:
                 q.put((-1 * r['download_times'], r['url'], r['file_name'], r['file_size'], r['download_link'],
                        [r['url_1'], r['url_2'], r['url_3']]))
@@ -474,7 +481,7 @@ def update_url(url, _urls):
     try:
         html = requests.post(url, headers=headers)
     except requests.RequestException as e:
-        logging.exception('except: %s' % e)
+        logging.exception('except: [ %s ]' % e)
         sleep_after_banned("update info for " + url)
         # update_url(url)
         return
@@ -483,7 +490,7 @@ def update_url(url, _urls):
     if html.status_code != 200:
         global FAIL
         FAIL += 1
-        logging.warning("%s is invalid, error code: %d" % (url, html.status_code))
+        logging.warning("[ %s ] is invalid, error code: [ %d ]" % (url, html.status_code))
         return
 
     # set encoding
@@ -535,7 +542,7 @@ def update_urls_in_each_row():
                 "select url,url_1,url_2,url_3 from anime")
             result = cursor.fetchall()
             r_cnt = cursor.rowcount
-            logging.log(MyINFO, "fetch %d urlInfo from database to ---UPDATE---" % r_cnt)
+            logging.log(MyINFO, "fetch [ %d ] urlInfo from database to ---UPDATE---" % r_cnt)
             cnt_update = 0
             start_time = time.time()
             # preprocess visited
@@ -548,12 +555,12 @@ def update_urls_in_each_row():
                 duration = time.time() - start_time
                 percent = 100 * cnt_update / r_cnt
                 speed = cnt_update / duration
-                sys.stdout.write("\r.......%.2f%%, %d urlInfo , %.2f p/s, %s passed" %
+                sys.stdout.write("\r.......%.2f%%, %d urlInfo , %.2f p/s, [ %s ] passed" %
                                  (percent, cnt_update, speed, get_readable_time(duration)))
             sys.stdout.write("\n")
     finally:
         connection.close()
-    logging.log(MyINFO, "UPDATED %d urlInfos in database" % r_cnt)
+    logging.log(MyINFO, "UPDATED [ %d ] urlInfos in database" % r_cnt)
     pass
 
 
@@ -570,6 +577,12 @@ config = {
     'autocommit': True,
 }
 
+# vpn config
+vpn_account = "3130101213"
+vpn_password = "y19950425"
+# vpn_account = "3130104501"
+# vpn_password = "300014"
+
 ## configs
 SAVE_DIR = "downloaded_files"
 SAVE_DIR_top = "top_downloaded_files"
@@ -579,12 +592,31 @@ if SAVE_DIR not in os.listdir(os.getcwd()):
     os.mkdir(os.getcwd() + "/" + SAVE_DIR)
 os.chdir(os.getcwd() + "/" + SAVE_DIR)
 
+# 记录到文件
+logging.basicConfig(level=MyINFO,
+                    format='%(asctime)s %(funcName)s [line:%(lineno)d] : %(message)s',
+                    datefmt='%H:%M:%S',
+                    filename=' _downloader.log',
+                    filemode='w')
+
+#定义一个StreamHandler，将INFO级别或更高的日志信息打印到标准错误，并将其添加到当前的日志处理对象#
+# 记录到console
+console = logging.StreamHandler()
+console.setLevel(MyINFO)
+formatter = logging.Formatter('%(asctime)s %(funcName)s [line:%(lineno)d] : %(message)s')
+console.setFormatter(formatter)
+logging.getLogger('').addHandler(console)
+
 # defined intervals
 SLEEP_L = 0.1  # s
 SLEEP_H = 0.2  # s
 MAX_PER_IP = 500  # times
-SLEEP_AFTER_BANNED = 90.0  # s
-SLEEP_AFTER_DOWNLOAD_MAX_FILE = 15.0  # s
+SLEEP_AFTER_BANNED = 150.0  # s
+SLEEP_AFTER_DOWNLOAD_MAX_FILE = 90.0  # s
+
+# download chunk
+block_size = 512 * KB
+
 ####
 TOTAL = 10000
 NEED_UPDATE = False
@@ -592,13 +624,18 @@ NEED_DOWNLOAD = True
 
 ## only need to run the first time
 # init_url_into_db(initial_urls)
-#
+
+
+
 # delay for a piece of time at the start
-DELAY = 0 * MINUTE + 30 * SECOND
-logging.log(MyINFO, "delay for %s at the start" % get_readable_time(DELAY))
+DELAY = 0 * MINUTE + 5 * SECOND
+logging.log(MyINFO, "delay for [ %s ] at the start" % get_readable_time(DELAY))
 my_timer(DELAY)
 # doing work
 download_file_by_bfs(initial_urls, TOTAL)
+# TODO: add log file to logging while output at screen at the same time
+
+
 
 # print result
 total_downloaded = len([name for name in os.listdir('.') if os.path.isfile(name)])
