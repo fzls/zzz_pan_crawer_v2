@@ -11,11 +11,6 @@ import pymysql
 import pymysql.cursors
 import requests
 
-logging.addLevelName(level=25, levelName='MyINFO')
-MyINFO = 25
-
-
-
 CODE_LENGTH = 7
 BASE_URL = "http://zzzpan.com/"
 PARAMs = "?/file/view-"
@@ -24,6 +19,7 @@ ALPHABETS = string.ascii_uppercase[:] + string.digits
 VISITED = set()
 cnt = 0
 url_cnt = 0
+cnt_new_url_in_urls = 0
 FAIL = 0
 BANNED = 0
 
@@ -42,6 +38,22 @@ FILE_NAME = 2
 FILE_SIZE = 3
 DOWNLOAD_LINK = 4
 URLS = 5
+
+# blocks
+BLOCKS = [
+    u'\u0020',  # 0/8 BLOCK
+    u'\u258F',  # 1/8 BLOCK
+    u'\u258E',  # 2/8 BLOCK
+    u'\u258D',  # 3/8 BLOCK
+    u'\u258C',  # 4/8 BLOCK
+    u'\u258B',  # 5/8 BLOCK
+    u'\u258A',  # 6/8 BLOCK
+    u'\u2589',  # 7/8 BLOCK
+    u'\u2588',  # 8/8 BLOCK
+]
+
+FULL = 8
+EMPTY = 0
 
 initial_urls = ["http://zzzpan.com/?/file/view-KN80TPI.html",
                 "http://zzzpan.com/?/file/view-PNCCAVV.html",
@@ -113,14 +125,33 @@ def get_readable_time(_t):
     pass
 
 
+def get_progress_bar(progress, total):
+    global PROGRESS_BAR_LENGTH, BLOCKS, FULL, EMPTY
+
+    percent = 100 * progress / total
+    total_parts = 8 * PROGRESS_BAR_LENGTH
+    parts = int(percent / 100 * total_parts)
+
+    full_block = int(parts / 8)
+    last_block = int(parts % 8)
+    empty_block = PROGRESS_BAR_LENGTH - full_block - 1
+    return ' [ ' + "%5.2f %% " % percent \
+           + str(BLOCKS[FULL] * full_block) + BLOCKS[last_block] + str(BLOCKS[EMPTY] * empty_block) + ' ] '
+    pass
+
+
 def my_timer(total):
-    DELAY = int(total)
-    for t in range(DELAY):
-        time.sleep(1)
-        sys.stdout.write("\rTime elapsed : [ %s ]     ||||   remaining : [ %s ] " % (
-            get_readable_time(t + 1), get_readable_time(DELAY - t - 1)))
+    global TICK_PER_SECOND
+    DELAY = int(total) * TICK_PER_SECOND + 1
+    time_per_tick = 1 / TICK_PER_SECOND
+    for tick in range(1, DELAY):
+        time.sleep(time_per_tick)
+        time_elapsed = tick / TICK_PER_SECOND
+        sys.stdout.write("\rTime elapsed : [ %s ]     ||||   remaining : [ %s ]  " % (
+            get_readable_time(time_elapsed), get_readable_time(total - time_elapsed)) + get_progress_bar(tick,
+                                                                                                         DELAY - 1))
     # the .x time like .6 in 10.6s
-    time.sleep(total - DELAY)
+    time.sleep(total - int(total))
     sys.stdout.write("\n")
 
 
@@ -290,14 +321,15 @@ def download_file(urlInfo, q):
     global cnt, NEED_DOWNLOAD
     download_link = urlInfo[DOWNLOAD_LINK]
     file_name = urlInfo[FILE_NAME]
-    logging.log(MyINFO, "\n------------------------------------------------------------------")
-    logging.log(MyINFO, "downloaded times : [ %d ]" % urlInfo[DOWNLOAD_TIMES])
+    logging.log(MyINFO, "------------------------------------------------------------------")
+    logging.log(MyINFO, "downloaded times : [ %d ]" % (-1 * urlInfo[DOWNLOAD_TIMES]))
     if NEED_DOWNLOAD:
-        # if file not exist, download it
-        if not os.path.exists(os.getcwd() + '\\' + file_name):
+        # if file not exist or file exist but size is 0, download it
+        file_path = os.getcwd() + '\\' + file_name
+        if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
             # print banner
             cnt += 1
-            logging.log(MyINFO, "\n----------------------------the %d th----------------------------" % cnt)
+            logging.log(MyINFO, "----------------------------the %d th----------------------------" % cnt)
             logging.log(MyINFO, "current url: [ %s ]" % urlInfo[URL])
 
             start = time.clock()
@@ -328,8 +360,9 @@ def download_file(urlInfo, q):
                             percent = int(progress_size * 100 / total_size)
                             remain_time = (total_size - progress_size) * duration / progress_size
                             sys.stdout.write(
-                                "\r.......%d%%, %d KB, %d KB/s, [ %s passed | about %s remain ]  block size : %d KB" %
-                                (percent, progress_size / KB, speed, get_readable_time(duration),
+                                "\r......." + get_progress_bar(progress_size,
+                                                               total_size) + " %d KB, %d KB/s, [ %s passed | about %s remain ]  block size : %d KB" %
+                                (progress_size / KB, speed, get_readable_time(duration),
                                  get_readable_time(remain_time), block_size / KB))
                             file.write(chunk)
                             file.flush()
@@ -337,9 +370,12 @@ def download_file(urlInfo, q):
                             count += 1
                     sys.stdout.write("\n")
                 end = time.clock()
-                logging.log(MyINFO, "file download and saved using [ %s ]" % get_readable_time(end - start))
+                duration = time.time() - start_time
+                logging.log(MyINFO, "file download and saved using [ %s ], average speed is [ %.2f KB/s ]" % (
+                    get_readable_time(end - start), total_size / (KB * duration)))
                 reconnect_and_sleep_after_visited_server_max_times()
             except requests.RequestException as e:
+                sys.stdout.write("\n")
                 logging.exception('except: [ %s ]' % e)
                 sleep_after_banned("downloading " + file_name)
                 # download_file(urlInfo, q)
@@ -353,7 +389,9 @@ def download_file(urlInfo, q):
         if url not in VISITED:
             fetch_file_info(url, q)
 
-    logging.log(MyINFO, "Remaining urls : [ %d ] |||-----|||  newly fetched urls : [ %d ]" % (q.qsize(), url_cnt))
+    logging.log(MyINFO,
+                "Remaining urls : [ %d ] |||-----|||  newly fetched urls : [ %d ] , downloaded [ %d ] new file" % (
+                    q.qsize(), url_cnt, cnt))
 
 
 # def generate_next_random_url():
@@ -381,11 +419,15 @@ def reconnect_net():
     # print new ip
     import subprocess, locale
     p = subprocess.Popen("ipconfig", stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True).communicate()[0]
-    s = p.decode(locale.getpreferredencoding(False))
+    ip_config = p.decode(locale.getpreferredencoding(False))
     ip = re.search(
         r'IPv4 Address. . . . . . . . . . . : (.+)\r\n   Subnet Mask . . . . . . . . . . . : 255.255.255.255\r\n',
-        s).group(1)
+        ip_config).group(1)
     logging.log(MyINFO, "Current ip is [ %s ] , account is [ %s ]" % (ip, vpn_account))
+    current_ip = open('F:/Google_Drive/_IP_today/IP.txt', 'w')
+    current_ip.writelines(time.strftime('%c'))
+    current_ip.write(ip_config)
+    logging.log(MyINFO, "ipconfig has been saved to local file")
 
 
 # def getTopDownloadedFiles(initial_urls, max_time):
@@ -481,6 +523,7 @@ def update_url(url, _urls):
     try:
         html = requests.post(url, headers=headers)
     except requests.RequestException as e:
+        sys.stdout.write("\n")
         logging.exception('except: [ %s ]' % e)
         sleep_after_banned("update info for " + url)
         # update_url(url)
@@ -499,8 +542,12 @@ def update_url(url, _urls):
     # find new urls
     urls = re.findall(r'<li><a href="(.+?)">', html.text)
     # add base url
+    global cnt_new_url_in_urls
     for i in range(urls.__len__()):
         urls[i] = BASE_URL + urls[i]
+        if urls[i] not in VISITED:
+            cnt_new_url_in_urls += 1
+            VISITED.add(urls[i])
 
     # update urls
     global config
@@ -511,6 +558,9 @@ def update_url(url, _urls):
             cursor.execute(update_sql, (urls[0], urls[1], urls[2], url))
     finally:
         connection.close()
+    # sleep
+    global url_cnt
+    url_cnt += 1
 
 
 def init_url_into_db(initial_urls):
@@ -533,7 +583,7 @@ def init_url_into_db(initial_urls):
 
 
 def update_urls_in_each_row():
-    global config
+    global config, url_cnt, cnt_new_url_in_urls
     connection = pymysql.connect(**config)
     r_cnt = 0
     try:
@@ -543,7 +593,7 @@ def update_urls_in_each_row():
             result = cursor.fetchall()
             r_cnt = cursor.rowcount
             logging.log(MyINFO, "fetch [ %d ] urlInfo from database to ---UPDATE---" % r_cnt)
-            cnt_update = 0
+            cnt_processed = 0
             start_time = time.time()
             # preprocess visited
             global VISITED
@@ -551,12 +601,14 @@ def update_urls_in_each_row():
                 VISITED.add(r['url'])
             for r in result:
                 update_url(r['url'], [r['url_1'], r['url_2'], r['url_3']])
-                cnt_update += 1
+                cnt_processed += 1
                 duration = time.time() - start_time
-                percent = 100 * cnt_update / r_cnt
-                speed = cnt_update / duration
-                sys.stdout.write("\r.......%.2f%%, %d urlInfo , %.2f p/s, [ %s ] passed" %
-                                 (percent, cnt_update, speed, get_readable_time(duration)))
+                speed = cnt_processed / duration
+                sys.stdout.write(
+                    "\r......." + get_progress_bar(cnt_processed,
+                                                   r_cnt) + " %d processed, [ %d ] updated, [ %d ] new url in urls, [ %.2f ] p/s, [ %s ] passed, remaining time [ %s ]" %
+                    (cnt_processed, url_cnt, cnt_new_url_in_urls, speed, get_readable_time(duration),
+                     get_readable_time((r_cnt - cnt_processed) / speed)))
             sys.stdout.write("\n")
     finally:
         connection.close()
@@ -592,18 +644,21 @@ if SAVE_DIR not in os.listdir(os.getcwd()):
     os.mkdir(os.getcwd() + "/" + SAVE_DIR)
 os.chdir(os.getcwd() + "/" + SAVE_DIR)
 
+# set logging level
+MyINFO = 45
+logging.addLevelName(level=MyINFO, levelName='MyINFO')
 # 记录到文件
 logging.basicConfig(level=MyINFO,
-                    format='%(asctime)s %(funcName)s [line:%(lineno)d] : %(message)s',
+                    format='%(asctime)s [line:%(lineno)d] : %(message)s',
                     datefmt='%H:%M:%S',
-                    filename=' _downloader.log',
+                    filename=' _downloader_[' + time.strftime('%d_%b_%Y-%H_%M_%S') + '].log',
                     filemode='w')
 
-#定义一个StreamHandler，将INFO级别或更高的日志信息打印到标准错误，并将其添加到当前的日志处理对象#
+# 定义一个StreamHandler，将INFO级别或更高的日志信息打印到标准错误，并将其添加到当前的日志处理对象#
 # 记录到console
 console = logging.StreamHandler()
 console.setLevel(MyINFO)
-formatter = logging.Formatter('%(asctime)s %(funcName)s [line:%(lineno)d] : %(message)s')
+formatter = logging.Formatter('%(asctime)s [line:%(lineno)d] : %(message)s')
 console.setFormatter(formatter)
 logging.getLogger('').addHandler(console)
 
@@ -613,29 +668,25 @@ SLEEP_H = 0.2  # s
 MAX_PER_IP = 500  # times
 SLEEP_AFTER_BANNED = 150.0  # s
 SLEEP_AFTER_DOWNLOAD_MAX_FILE = 90.0  # s
-
+TICK_PER_SECOND = 1
 # download chunk
-block_size = 512 * KB
+block_size = 128 * KB
 
 ####
 TOTAL = 10000
+PROGRESS_BAR_LENGTH = 20
 NEED_UPDATE = False
 NEED_DOWNLOAD = True
 
 ## only need to run the first time
 # init_url_into_db(initial_urls)
 
-
-
 # delay for a piece of time at the start
-DELAY = 0 * MINUTE + 5 * SECOND
+DELAY = 1 * MINUTE + 30 * SECOND
 logging.log(MyINFO, "delay for [ %s ] at the start" % get_readable_time(DELAY))
 my_timer(DELAY)
 # doing work
 download_file_by_bfs(initial_urls, TOTAL)
-# TODO: add log file to logging while output at screen at the same time
-
-
 
 # print result
 total_downloaded = len([name for name in os.listdir('.') if os.path.isfile(name)])
